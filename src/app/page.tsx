@@ -225,22 +225,22 @@ export default function Home() {
       return [
         { name: '58獎金', prob: '80', color: 'cyan' },
         { name: '168獎金', prob: '10', color: 'pink' },
-        { name: '馬逼簽名', prob: '8', color: 'purple' },
-        { name: '666獎金', prob: '2', color: 'green' },
+        { name: '馬逼簽名', prob: '9.5', color: 'purple' },
+        { name: '666獎金', prob: '0.5', color: 'green' },
       ];
     } else if (selectedAmount === '5000') {
       return [
         { name: '188獎金', prob: '80', color: 'cyan' },
         { name: '388獎金', prob: '10', color: 'pink' },
-        { name: '馬逼簽名', prob: '8', color: 'purple' },
-        { name: '1688獎金', prob: '2', color: 'green' },
+        { name: '馬逼簽名', prob: '9.5', color: 'purple' },
+        { name: '1688獎金', prob: '0.5', color: 'green' },
       ];
     } else {
       return [
         { name: '388獎金', prob: '80', color: 'cyan' },
         { name: '666獎金', prob: '10', color: 'pink' },
-        { name: '馬逼簽名', prob: '8', color: 'purple' },
-        { name: '2888獎金', prob: '2', color: 'green' },
+        { name: '馬逼簽名', prob: '9.5', color: 'purple' },
+        { name: '2888獎金', prob: '0.5', color: 'green' },
       ];
     }
   };
