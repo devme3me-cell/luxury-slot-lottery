@@ -15,7 +15,7 @@ import {
   Shield,
   Database
 } from 'lucide-react';
-import { getEntries, deleteEntry as deleteEntryFromDB, clearAllEntries, type Entry } from '@/lib/supabase';
+import { getEntries, type Entry } from '@/lib/supabase';
 import { generateTestData } from '../../test-data';
 
 export default function AdminDashboard() {
@@ -23,23 +23,28 @@ export default function AdminDashboard() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterAmount, setFilterAmount] = useState('all');
+  const [mounted, setMounted] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
-    // Check authentication
-    const isAuthenticated = localStorage.getItem('adminAuthenticated');
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+    // Check authentication only once
+    const isAuthenticated = typeof window !== 'undefined' ? localStorage.getItem('adminAuthenticated') : null;
     if (isAuthenticated !== 'true') {
-      router.push('/admin');
+      router.replace('/admin');
       return;
     }
 
-    // Load entries from localStorage
+    // Load entries from Supabase
     loadEntries();
-
-    // Set up interval to check for new entries every 2 seconds
     const interval = setInterval(loadEntries, 2000);
     return () => clearInterval(interval);
-  }, [router]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mounted]);
 
   const loadEntries = async () => {
     try {
@@ -73,30 +78,6 @@ export default function AdminDashboard() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  };
-
-  const handleDeleteEntry = async (id: string) => {
-    if (confirm('確定要刪除這筆記錄嗎？')) {
-      try {
-        await deleteEntryFromDB(id);
-        await loadEntries();
-      } catch (error) {
-        console.error('Error deleting entry:', error);
-        alert('刪除失敗，請稍後再試');
-      }
-    }
-  };
-
-  const handleClearAll = async () => {
-    if (confirm('確定要清除所有記錄嗎？此操作無法復原。')) {
-      try {
-        await clearAllEntries();
-        setEntries([]);
-      } catch (error) {
-        console.error('Error clearing entries:', error);
-        alert('清除失敗，請稍後再試');
-      }
-    }
   };
 
   const handleGenerateTestData = async () => {
@@ -214,12 +195,7 @@ export default function AdminDashboard() {
               <Database className="w-4 h-4" />
               生成測試資料
             </button>
-            <button
-              onClick={handleClearAll}
-              className="px-4 py-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition"
-            >
-              清除所有記錄
-            </button>
+            {/* Entries are always visible and managed via Supabase. */}
           </div>
         </div>
 
@@ -287,13 +263,7 @@ export default function AdminDashboard() {
                         )}
                       </td>
                       <td className="p-4">
-                        <button
-                          onClick={() => handleDeleteEntry(entry.id)}
-                          className="p-2 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition"
-                          title="刪除記錄"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
+                        {/* Entries are always visible; no delete/clear UI */}
                       </td>
                     </tr>
                   ))
