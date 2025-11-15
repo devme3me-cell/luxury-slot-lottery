@@ -15,6 +15,11 @@ export interface Entry {
   created_at?: string;
 }
 
+export interface EntriesPage {
+  data: Entry[];
+  total: number;
+}
+
 // Entry operations
 export async function saveEntry(entry: Omit<Entry, 'created_at'>) {
   const { data, error } = await supabase
@@ -42,6 +47,55 @@ export async function getEntries() {
   }
 
   return data as Entry[];
+}
+
+export async function getEntriesPaged({
+  page,
+  pageSize,
+  search,
+  amount,
+  dateFrom,
+  dateTo,
+}: {
+  page: number;
+  pageSize: number;
+  search?: string;
+  amount?: string;
+  dateFrom?: string;
+  dateTo?: string;
+}): Promise<EntriesPage> {
+  const from = Math.max(0, (page - 1) * pageSize);
+  const to = from + pageSize - 1;
+
+  let query = supabase
+    .from('entries')
+    .select('*', { count: 'exact' })
+    .order('timestamp', { ascending: false });
+
+  if (search && search.trim()) {
+    query = query.ilike('username', `%${search.trim()}%`);
+  }
+  if (amount && amount !== 'all') {
+    query = query.eq('amount', amount);
+  }
+  if (dateFrom) {
+    query = query.gte('timestamp', dateFrom);
+  }
+  if (dateTo) {
+    query = query.lte('timestamp', dateTo);
+  }
+
+  const { data, error, count } = await query.range(from, to);
+
+  if (error) {
+    console.error('Error fetching paged entries:', error);
+    throw error;
+  }
+
+  return {
+    data: (data as Entry[]) || [],
+    total: count || 0,
+  };
 }
 
 export async function deleteEntry(id: string) {
@@ -88,4 +142,19 @@ export async function getTodayEntries() {
   }
 
   return data as Entry[];
+}
+
+export async function getTodayCount(): Promise<number> {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const { count, error } = await supabase
+    .from('entries')
+    .select('id', { count: 'exact', head: true })
+    .gte('timestamp', today.toISOString());
+
+  if (error) {
+    console.error('Error counting today entries:', error);
+    return 0;
+  }
+  return count || 0;
 }

@@ -15,16 +15,22 @@ import {
   Shield,
   Database
 } from 'lucide-react';
-import { getEntries, type Entry } from '@/lib/supabase';
+import { getEntriesPaged, getTodayCount, type Entry } from '@/lib/supabase';
 import { generateTestData } from '../../test-data';
+import { supabase } from '@/lib/supabase';
 
 export default function AdminDashboard() {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterAmount, setFilterAmount] = useState('all');
-  const [mounted, setMounted] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [total, setTotal] = useState(0);
+  const [todayCount, setTodayCount] = useState(0);
   const router = useRouter();
+  const [mounted, setMounted] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -32,38 +38,52 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     if (!mounted) return;
-    // Check authentication only once
-    const isAuthenticated = typeof window !== 'undefined' ? localStorage.getItem('adminAuthenticated') : null;
-    if (isAuthenticated !== 'true') {
-      router.replace('/admin');
-      return;
-    }
-
-    // Load entries from Supabase
-    loadEntries();
-    const interval = setInterval(loadEntries, 2000);
-    return () => clearInterval(interval);
+    // Supabase Auth check
+    const checkAuth = async () => {
+      const { data } = await supabase.auth.getUser();
+      const user = data?.user;
+      if (!user) {
+        router.replace('/admin');
+        return;
+      }
+      const allowed = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (allowed.length > 0 && (!user.email || !allowed.includes(user.email))) {
+        await supabase.auth.signOut();
+        router.replace('/admin');
+        return;
+      }
+      // load initial data
+      await loadEntries();
+      const interval = setInterval(loadEntries, 5000);
+      return () => clearInterval(interval);
+    };
+    checkAuth();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mounted]);
+  }, [mounted, page, pageSize, searchTerm, filterAmount]);
 
   const loadEntries = async () => {
     try {
-      const data = await getEntries();
+      setLoadError(null);
+      const { data, total } = await getEntriesPaged({
+        page,
+        pageSize,
+        search: searchTerm,
+        amount: filterAmount,
+      });
       setEntries(data);
-      console.log('Loaded entries:', data.length);
+      setTotal(total);
+      const tc = await getTodayCount();
+      setTodayCount(tc);
     } catch (error) {
       console.error('Error loading entries:', error);
-      setEntries([]);
+      setLoadError('資料載入失敗，已保留先前資料。稍後再試。');
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('adminAuthenticated');
-    router.push('/admin');
-  };
-
   const handleImageClick = (image: string) => {
-    console.log('Opening image preview:', image ? 'Image exists' : 'No image');
     setSelectedImage(image);
   };
 
@@ -90,21 +110,14 @@ export default function AdminDashboard() {
     }
   };
 
-  // Filter entries based on search and amount filter
-  const filteredEntries = entries.filter(entry => {
-    const matchesSearch = entry.username.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesAmount = filterAmount === 'all' || entry.amount === filterAmount;
-    return matchesSearch && matchesAmount;
-  });
+  // Filter entries based on search and amount filter (for client-side fallback, but server-side paged)
+  // Not used for display, but for statistics
+  const filteredEntries = entries;
 
   // Calculate statistics
-  const totalEntries = entries.length;
-  const todayEntries = entries.filter(entry => {
-    const entryDate = new Date(entry.timestamp).toDateString();
-    const today = new Date().toDateString();
-    return entryDate === today;
-  }).length;
   const totalAmount = entries.reduce((sum, entry) => sum + parseInt(entry.amount), 0);
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   // Add ESC key listener for modal close
   useEffect(() => {
@@ -129,7 +142,10 @@ export default function AdminDashboard() {
             </h1>
           </div>
           <button
-            onClick={handleLogout}
+            onClick={async () => {
+              await supabase.auth.signOut();
+              router.replace('/admin');
+            }}
             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-500/20 text-red-400 hover:bg-red-500/30 transition"
           >
             <LogOut className="w-4 h-4" />
@@ -143,7 +159,7 @@ export default function AdminDashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-yellow-500/60 text-sm">總參與人數</p>
-                <p className="text-2xl font-bold gold-gradient">{totalEntries}</p>
+                <p className="text-2xl font-bold gold-gradient">{total.toLocaleString()}</p>
               </div>
               <User className="w-8 h-8 text-yellow-500/40" />
             </div>
@@ -152,7 +168,7 @@ export default function AdminDashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-yellow-500/60 text-sm">今日參與</p>
-                <p className="text-2xl font-bold gold-gradient">{todayEntries}</p>
+                <p className="text-2xl font-bold gold-gradient">{todayCount}</p>
               </div>
               <Calendar className="w-8 h-8 text-yellow-500/40" />
             </div>
@@ -175,12 +191,12 @@ export default function AdminDashboard() {
               type="text"
               placeholder="搜尋用戶名..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => { setPage(1); setSearchTerm(e.target.value); }}
               className="flex-1 px-4 py-2 rounded-lg luxury-input outline-none"
             />
             <select
               value={filterAmount}
-              onChange={(e) => setFilterAmount(e.target.value)}
+              onChange={(e) => { setPage(1); setFilterAmount(e.target.value); }}
               className="px-4 py-2 rounded-lg luxury-input outline-none"
             >
               <option value="all">所有金額</option>
@@ -195,7 +211,6 @@ export default function AdminDashboard() {
               <Database className="w-4 h-4" />
               生成測試資料
             </button>
-            {/* Entries are always visible and managed via Supabase. */}
           </div>
         </div>
 
@@ -214,14 +229,21 @@ export default function AdminDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {filteredEntries.length === 0 ? (
+                {loadError && (
+                  <tr>
+                    <td colSpan={6} className="text-center py-4 text-red-400">
+                      {loadError}
+                    </td>
+                  </tr>
+                )}
+                {entries.length === 0 && !loadError ? (
                   <tr>
                     <td colSpan={6} className="text-center py-8 text-yellow-500/50">
                       暫無記錄
                     </td>
                   </tr>
                 ) : (
-                  filteredEntries.map((entry) => (
+                  entries.map((entry) => (
                     <tr key={entry.id} className="border-b border-yellow-500/10 hover:bg-yellow-500/5 transition">
                       <td className="p-4 text-yellow-500/70">
                         {new Date(entry.timestamp).toLocaleString('zh-TW')}
@@ -270,6 +292,40 @@ export default function AdminDashboard() {
                 )}
               </tbody>
             </table>
+          </div>
+          {/* Pagination Controls */}
+          <div className="flex items-center justify-between p-4">
+            <div className="text-sm text-yellow-500/70">
+              共 {total.toLocaleString()} 筆，頁 {page} / {totalPages}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                className="px-3 py-1 rounded-lg bg-yellow-500/20 text-yellow-500 disabled:opacity-50"
+              >
+                上一頁
+              </button>
+              <button
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                className="px-3 py-1 rounded-lg bg-yellow-500/20 text-yellow-500 disabled:opacity-50"
+              >
+                下一頁
+              </button>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPage(1);
+                  setPageSize(parseInt(e.target.value, 10));
+                }}
+                className="px-2 py-1 rounded-lg luxury-input"
+              >
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+              </select>
+            </div>
           </div>
         </div>
 

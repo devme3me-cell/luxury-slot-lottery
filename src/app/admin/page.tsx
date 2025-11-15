@@ -4,38 +4,63 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Lock, User, Shield } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
 export default function AdminLogin() {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
-    // Check if already logged in
-    const isAuthenticated = localStorage.getItem('adminAuthenticated');
-    if (isAuthenticated === 'true') {
-      router.push('/admin/dashboard');
-    }
-  }, [router]);
+    // If already authenticated, redirect
+    const checkAuth = async () => {
+      const { data } = await supabase.auth.getUser();
+      const user = data?.user;
+      if (user) {
+        const allowed = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || '')
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean);
+        if (allowed.length === 0 || (user.email && allowed.includes(user.email))) {
+          router.replace('/admin/dashboard');
+        }
+      }
+    };
+    checkAuth();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
 
-    // Simulate login delay
-    await new Promise(resolve => setTimeout(resolve, 500));
+    const { data, error: signInError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
-    // Check credentials
-    if (username === 'chitu2025' && password === '1234567890') {
-      localStorage.setItem('adminAuthenticated', 'true');
-      router.push('/admin/dashboard');
-    } else {
-      setError('Invalid username or password');
+    if (signInError) {
+      setError(signInError.message || '登入失敗，請稍後再試');
       setIsLoading(false);
+      return;
     }
+
+    const user = data.user;
+    const allowed = (process.env.NEXT_PUBLIC_ADMIN_EMAILS || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (allowed.length > 0 && (!user?.email || !allowed.includes(user.email))) {
+      await supabase.auth.signOut();
+      setError('此帳號無管理員權限');
+      setIsLoading(false);
+      return;
+    }
+
+    router.replace('/admin/dashboard');
   };
 
   return (
@@ -46,29 +71,25 @@ export default function AdminLogin() {
           <div className="flex items-center justify-center gap-3 mb-4">
             <Shield className="w-12 h-12 text-yellow-500" />
           </div>
-          <h1 className="text-3xl font-bold gold-gradient mb-2">
-            管理員登入
-          </h1>
-          <p className="text-yellow-500/60">
-            請輸入管理員帳號密碼
-          </p>
+          <h1 className="text-3xl font-bold gold-gradient mb-2">管理員登入</h1>
+          <p className="text-yellow-500/60">請輸入管理員 Email 與密碼</p>
         </div>
 
         {/* Login Form */}
         <div className="luxury-card rounded-2xl p-8">
           <form onSubmit={handleLogin} className="space-y-6">
-            {/* Username Field */}
+            {/* Email Field */}
             <div className="space-y-2">
               <label className="flex items-center gap-2 text-yellow-500 font-semibold">
                 <User className="w-4 h-4" />
-                管理員帳號
+                管理員 Email
               </label>
               <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 className="w-full px-4 py-3 rounded-xl luxury-input outline-none"
-                placeholder="請輸入帳號"
+                placeholder="example@domain.com"
                 required
               />
             </div>
